@@ -65,19 +65,58 @@ exports.publish = (req, res) => {
     });
 };
 
+
+const publishers = {
+  "gcpPubsub": {
+    "publish": function publish(topic, message) { 
+      const pubsubTopic = pubsub.topic(topic);
+      pubsubTopic.publish(message)
+    }
+  }
+}
+
+const publishRecord = (topic, message, publisher) => {
+  publisher.publish(topic, messsage)
+};
+
+ /**
+ * Reads zipped file, unzips and publishes JSON records.
+ *
+ * @example
+ * gcloud alpha functions call processZip --data '{"attributes": {"bucketId": "YOUR_BUCKET_NAME", "objectId": "sample.txt.zip"}}'
+ *
+ * @param {object} event The Cloud Functions event.
+ * @param {object} event.data A Google Cloud Pubsub Message.
+ * @param {object} event.data.attributes Attributes of the Pubsub message.
+ * @param {string} event.data.attributes.objectId Name of a file in the Cloud Storage bucket.
+ * @param {string} event.data.attributes.objectId Name of a Cloud Storage bucket.
+ * @param {function} callback The callback function.
+ */
 exports.processZip = (event, callback) => {
     const pubsubMessage = event.data.attributes;
-    console.log(pubsubMessage);
     const name = pubsubMessage.objectId,
       bucket = pubsubMessage.bucketId;
     
+    // load the file from Cloud Storage
     let file = getFileStream(bucket, name);
-    console.log(`beginning unzipping`)
     
-    file.pipe(unzipper.ParseOne())
-    .pipe(JSONStream.parse('results.*'))
+  
+    file.pipe(unzipper.ParseOne()) // unzip the file, since there's only one file expected grab the first one
+    .pipe(JSONStream.parse('results.*')) // separate records from the 'results' array
+    .pipe(JSONStream.stringify()) // create a string out of the records
     .on('data', function publishRecord(data){
-      console.log(`publish record: ${data.boxed_warning}`)
+      //publishRecord('dataset-fda-status', data, publishers.gcpPubsub)
+      //const dataString = JSONStream.stringify();
+      const dataBuffer = Buffer.from(data);
+      const pubsubTopic = pubsub.topic('dataset-fda-status');
+      pubsubTopic.publisher().publish(dataBuffer)
+      .then(results => {
+        const messageId = results[0];
+        console.log(`Message published: ${messageId}`);
+      })
+      .catch(err => {
+        callback(err);
+      })
     })
     .on('end', function handleEnd(data) {
       callback(null, `published`)

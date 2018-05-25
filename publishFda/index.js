@@ -100,7 +100,6 @@ exports.processZip = (event, callback) => {
     // load the file from Cloud Storage
     let file = getFileStream(bucket, name);
     
-  
     file.pipe(unzipper.ParseOne()) // unzip the file, since there's only one file expected grab the first one
     .pipe(JSONStream.parse('results.*')) // separate records from the 'results' array
     .pipe(JSONStream.stringify()) // create a string out of the records
@@ -108,11 +107,10 @@ exports.processZip = (event, callback) => {
       //publishRecord('dataset-fda-status', data, publishers.gcpPubsub)
       //const dataString = JSONStream.stringify();
       const dataBuffer = Buffer.from(data);
-      const pubsubTopic = pubsub.topic('dataset-fda-status');
+      const pubsubTopic = pubsub.topic('load-to-marklogic');
       pubsubTopic.publisher().publish(dataBuffer)
       .then(results => {
         const messageId = results[0];
-        console.log(`Message published: ${messageId}`);
       })
       .catch(err => {
         callback(err);

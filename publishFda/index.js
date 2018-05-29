@@ -97,20 +97,27 @@ exports.processZip = (event, callback) => {
     const name = pubsubMessage.objectId,
       bucket = pubsubMessage.bucketId;
     
+    // build custom attributes to record the bucket notification in the message
+    let attributes = {
+      provenance: [
+        pubSubMessage
+      ]
+    } 
+
     // load the file from Cloud Storage
     let file = getFileStream(bucket, name);
     
     file.pipe(unzipper.ParseOne()) // unzip the file, since there's only one file expected grab the first one
     .pipe(JSONStream.parse('results.*')) // separate records from the 'results' array
-    .pipe(JSONStream.stringify()) // create a string out of the records
-    .on('data', function publishRecord(data){
-      //publishRecord('dataset-fda-status', data, publishers.gcpPubsub)
-      //const dataString = JSONStream.stringify();
-      const dataBuffer = Buffer.from(data);
-      const pubsubTopic = pubsub.topic('load-to-marklogic');
-      pubsubTopic.publisher().publish(dataBuffer)
+    .pipe(JSONStream.stringify(false)) // create a string out of the records, 
+    // the false arg separates records only by carraige returns
+
+    .on('data', function publishRecord(data){ // when a record is found, publish it
+      const dataBuffer = Buffer.from(data); // publish api requires data to be buffered
+      const pubsubTopic = pubsub.topic('load-to-marklogic'); 
+      pubsubTopic.publisher().publish(dataBuffer, attributes) // add custom attributes tracking provenance
       .then(results => {
-        const messageId = results[0];
+        const messageId = results[0]; 
       })
       .catch(err => {
         callback(err);

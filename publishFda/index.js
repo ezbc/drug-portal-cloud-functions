@@ -5,79 +5,57 @@ const unzipper = require("unzipper");
 const JSONStream = require("JSONStream");
 const Storage = require('@google-cloud/storage');
 const PubSub = require('@google-cloud/pubsub');
+const fs = require('fs');
 
 // Instantiates a client
 const storage = Storage();
 const pubsub = PubSub();
 
-function getFileStream (bucket, name) {
+const TOPIC_TO_PUBLISH = 'load-to-marklogic';
+
+function getFileFromCloudStorage(bucket, name) {
+  return storage.bucket(bucket).file(name).createReadStream();
+}
+
+function getFileFromFilesystem(bucket, name) {
+  return fs.createReadStream(bucket + name);
+}
+
+function pubsubCallback(err, messageId){
+  if (err) {
+    throw Error
+  }
+}
+
+function publishToPubsub(attributes) {
+  return function publish(data) {
+    if (data) {
+      const dataBuffer = Buffer.from(data); // publish api requires data to be buffered
+      const pubsubTopic = pubsub.topic(TOPIC_TO_PUBLISH);
+      pubsubTopic.publisher().publish(dataBuffer, attributes, pubsubCallback) // add custom attributes tracking provenance
+    }
+  }
+}
+
+const persistors = {
+  'file': {
+    'filesystem': getFileFromFilesystem,
+    'cloudStorage': getFileFromCloudStorage
+  },
+  'publish': {
+    'pubsub': publishToPubsub
+  }
+};
+
+function getFileStream (bucket, name, persistor) {
   if (!bucket) {
     throw new Error('Bucket not provided. Make sure you have a "bucket" property in your request');
   }
   if (!name) {
     throw new Error('Filename not provided. Make sure you have a "name" property in your request');
-  }
-
-  return storage.bucket(bucket).file(name).createReadStream();
+  }  
+  return persistor(bucket, name);
 }
-
-/**
- * Publishes a message to a Cloud Pub/Sub Topic.
- *
- * @example
- * gcloud alpha functions call publish --data '{"topic":"[YOUR_TOPIC_NAME]","message":"Hello, world!"}'
- *
- *   - Replace `[YOUR_TOPIC_NAME]` with your Cloud Pub/Sub topic name.
- *
- * @param {object} req Cloud Function request context.
- * @param {object} req.body The request body.
- * @param {string} req.body.topic Topic name on which to publish.
- * @param {string} req.body.message Message to publish.
- * @param {object} res Cloud Function response context.
- */
-exports.publish = (req, res) => {
-  if (!req.body.topic) {
-    res.status(500).send(new Error('Topic not provided. Make sure you have a "topic" property in your request'));
-    return;
-  } else if (!req.body.message) {
-    res.status(500).send(new Error('Message not provided. Make sure you have a "message" property in your request'));
-    return;
-  }
-
-  console.log(`Publishing message to topic ${req.body.topic}`);
-
-  // References an existing topic
-  const topic = pubsub.topic(req.body.topic);
-
-  const message = {
-    data: {
-      message: req.body.message
-    }
-  };
-
-  // Publishes a message
-  return topic.publish(message)
-    .then(() => res.status(200).send('Message published.'))
-    .catch((err) => {
-      console.error(err);
-      res.status(500).send(err);
-      return Promise.reject(err);
-    });
-};
-
-
-const publishers = {
-  "gcpPubsub": {
-    "publish": function publish(topic, message) { 
-      const pubsubTopic = pubsub.topic(topic);
-      pubsubTopic.publish(message)
-    }
-  }
-}
-
-const publishRecord = (topic, message, publisher) => {
-  publisher.publish(topic, messsage)
-};
 
  /**
  * Reads zipped file, unzips and publishes JSON records.
@@ -93,36 +71,30 @@ const publishRecord = (topic, message, publisher) => {
  * @param {function} callback The callback function.
  */
 exports.processZip = (event, callback) => {
-    const pubsubMessage = event.data.attributes;
-    const name = pubsubMessage.objectId,
-      bucket = pubsubMessage.bucketId;
+
+    /* example event
+    * event: { eventId: '107157759352918', timestamp: '2018-05-31T20:27:06.524Z', eventType: 'providers/cloud.pubsub/eventTypes/topic.publish', resource: 'projects/drug-portal/topics/dataset-fda-status', data: { '@type': 'type.googleapis.com/google.pubsub.v1.PubsubMessage', attributes: { bucketId: 'drug_portal', eventTime: '2018-05-31T20:27:06.339990Z', eventType: 'OBJECT_FINALIZE', notificationConfig: 'projects/_/buckets/drug_portal/notificationConfigs/4', objectGeneration: '1527798426343359', objectId: 'data/fda/test34.json.zip', payloadFormat: 'JSON_API_V1' }, data: 'ewogICJraW5kIjogInN0b3JhZ2Ujb2JqZWN0IiwKICAiaWQiOiAiZHJ1Z19wb3J0YWwvZGF0YS9mZGEvdGVzdDM0Lmpzb24uemlwLzE1Mjc3OTg0MjYzNDMzNTkiLAogICJzZWxmTGluayI6ICJodHRwczovL3d3dy5nb29nbGVhcGlzLmNvbS9zdG9yYWdlL3YxL2IvZHJ1Z19wb3J0YWwvby9kYXRhJTJGZmRhJTJGdGVzdDM0Lmpzb24uemlwIiwKICAibmFtZSI6ICJkYXRhL2ZkYS90ZXN0MzQuanNvbi56aXAiLAogICJidWNrZXQiOiAiZHJ1Z19wb3J0YWwiLAogICJnZW5lcmF0aW9uIjogIjE1Mjc3OTg0MjYzNDMzNTkiLAogICJtZXRhZ2VuZXJhdGlvbiI6ICIxIiwKICAiY29udGVudFR5cGUiOiAiYXBwbGljYXRpb24vemlwIiwKICAidGltZUNyZWF0ZWQiOiAiMjAxOC0wNS0zMVQyMDoyNzowNi4zMzlaIiwKICAidXBkYXRlZCI6ICIyMDE4LTA1LTMxVDIwOjI3OjA2LjMzOVoiLAogICJzdG9yYWdlQ2xhc3MiOiAiUkVHSU9OQUwiLAogICJ0aW1lU3RvcmFnZUNsYXNzVXBkYXRlZCI6ICIyMDE4LTA1LTMxVDIwOjI3OjA2LjMzOVoiLAogICJzaXplIjogIjEwMTQwMyIsCiAgIm1kNUhhc2giOiAiRlN4WmRTQnZqd1pxanRXNEVscks1QT09IiwKICAibWVkaWFMaW5rIjogImh0dHBzOi8vd3d3Lmdvb2dsZWFwaXMuY29tL2Rvd25sb2FkL3N0b3JhZ2UvdjEvYi9kcnVnX3BvcnRhbC9vL2RhdGElMkZmZGElMkZ0ZXN0MzQuanNvbi56aXA/Z2VuZXJhdGlvbj0xNTI3Nzk4NDI2MzQzMzU5JmFsdD1tZWRpYSIsCiAgImNyYzMyYyI6ICJ1WHgyclE9PSIsCiAgImV0YWciOiAiQ0wrdjl0UGtzTnNDRUFFPSIKfQo=' } }
+    */
+
+    const attributes = event.data.attributes;
+    const name = attributes.objectId,
+      bucket = attributes.bucketId;
     
     // build custom attributes to record the bucket notification in the message
-    let attributes = {
+    const attributesToPublish = {
       provenance: [
-        pubsubMessage
+        attributes
       ]
-    } 
+    }
 
     // load the file from Cloud Storage
-    let file = getFileStream(bucket, name);
+    let file = getFileStream(bucket, name, persistors['file']['cloudStorage']);
     
     file.pipe(unzipper.ParseOne()) // unzip the file, since there's only one file expected grab the first one
     .pipe(JSONStream.parse('results.*')) // separate records from the 'results' array
     .pipe(JSONStream.stringify(false)) // create a string out of the records, 
     // the false arg separates records only by carraige returns
-
-    .on('data', function publishRecord(data){ // when a record is found, publish it
-      const dataBuffer = Buffer.from(data); // publish api requires data to be buffered
-      const pubsubTopic = pubsub.topic('load-to-marklogic'); 
-      pubsubTopic.publisher().publish(dataBuffer) // add custom attributes tracking provenance
-      .then(results => {
-        const messageId = results[0]; 
-      })
-      .catch(err => {
-        callback(err);
-      })
-    })
+    .on('data', persistors['publish']['pubsub'](attributes))
     .on('end', function handleEnd(data) {
       callback(null, `published`)
     })

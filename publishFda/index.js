@@ -100,7 +100,7 @@ exports.processZip = (event, callback) => {
     // build custom attributes to record the bucket notification in the message
     let attributes = {
       provenance: [
-        pubSubMessage
+        pubsubMessage
       ]
     } 
 
@@ -115,7 +115,7 @@ exports.processZip = (event, callback) => {
     .on('data', function publishRecord(data){ // when a record is found, publish it
       const dataBuffer = Buffer.from(data); // publish api requires data to be buffered
       const pubsubTopic = pubsub.topic('load-to-marklogic'); 
-      pubsubTopic.publisher().publish(dataBuffer, attributes) // add custom attributes tracking provenance
+      pubsubTopic.publisher().publish(dataBuffer) // add custom attributes tracking provenance
       .then(results => {
         const messageId = results[0]; 
       })

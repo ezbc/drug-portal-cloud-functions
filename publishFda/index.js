@@ -30,9 +30,11 @@ function pubsubCallback(err, messageId){
 function publishToPubsub(attributes) {
   return function publish(data) {
     if (data) {
-      const dataBuffer = Buffer.from(data); // publish api requires data to be buffered
+      const message = {content: JSON.parse(data),
+        header: attributes};
+      const buffer = Buffer.from(JSON.stringify(message)); // publish api requires data to be buffered
       const pubsubTopic = pubsub.topic(TOPIC_TO_PUBLISH);
-      pubsubTopic.publisher().publish(dataBuffer, attributes, pubsubCallback) // add custom attributes tracking provenance
+      pubsubTopic.publisher().publish(buffer, pubsubCallback) // add custom attributes tracking provenance
     }
   }
 }
@@ -87,6 +89,9 @@ exports.processZip = (event, callback) => {
       ]
     }
 
+    // get the publish callback
+    const publishCallback = persistors['publish']['pubsub'](attributes);
+
     // load the file from Cloud Storage
     let file = getFileStream(bucket, name, persistors['file']['cloudStorage']);
     
@@ -94,7 +99,7 @@ exports.processZip = (event, callback) => {
     .pipe(JSONStream.parse('results.*')) // separate records from the 'results' array
     .pipe(JSONStream.stringify(false)) // create a string out of the records, 
     // the false arg separates records only by carraige returns
-    .on('data', persistors['publish']['pubsub'](attributes))
+    .on('data', publishCallback)
     .on('end', function handleEnd(data) {
       callback(null, `published`)
     })

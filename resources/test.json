@@ -1,0 +1,27 @@
+{
+  "meta": {
+    "last_updated": "2018-05-14",
+    "terms": "https://open.fda.gov/terms/",
+    "results": {
+      "skip": 120000,
+      "total": 122449,
+      "limit": 2449
+    },
+    "license": "https://open.fda.gov/license/",
+    "disclaimer": "Do not rely on openFDA to make decisions regarding medical care. While we make every effort to ensure that data is accurate, you should assume all results are unvalidated. We may limit or otherwise restrict your access to the API in line with our Terms of Service."
+  },
+  "results": [
+    {
+      "boxed_warning": ["test1"
+      ],
+    },
+    {
+      "boxed_warning": ["test2"
+      ],
+    },
+    {
+      "boxed_warning": ["test3"
+      ],
+    },
+  ]
+}

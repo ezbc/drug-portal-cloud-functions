@@ -13,12 +13,22 @@ const pubsub = PubSub();
 
 const TOPIC_TO_PUBLISH = 'load-to-marklogic';
 
+/** Persistor for retrieving a file from Cloud Storage
+ * 
+ * @param {string} bucket The bucket or path to the file 
+ * @param {string} name The name of the file
+ */
 function getFileFromCloudStorage(bucket, name) {
   return storage.bucket(bucket).file(name).createReadStream();
 }
 
-function getFileFromFilesystem(bucket, name) {
-  return fs.createReadStream(bucket + name);
+/** Persistor for retrieving a file from filesystem
+ * 
+ * @param {string} prefixPath path to prefix filename
+ * @param {string} path path to filename
+ */
+function getFileFromFilesystem(prefixPath, path) {
+  return fs.createReadStream(prefixPath + path);
 }
 
 function pubsubCallback(err, messageId){
@@ -27,18 +37,36 @@ function pubsubCallback(err, messageId){
   }
 }
 
+/** Generate a function to publish data to pubsub.
+ * 
+ * @param {object} attributes attributes of a message to publish
+ * @return {function} function which accepts data to publish
+ */
 function publishToPubsub(attributes) {
-  return function publish(data) {
+
+  /** Publish message to pubsub
+   * 
+   * @param {object} data data to publish as message
+   */
+  function publish(data) {
     if (data) {
-      const message = {content: JSON.parse(data),
+      const message = {
+        content: data,
         header: attributes};
       const buffer = Buffer.from(JSON.stringify(message)); // publish api requires data to be buffered
-      const pubsubTopic = pubsub.topic(TOPIC_TO_PUBLISH);
+      const pubsubTopic = pubsub.topic(TOPIC_TO_PUBLISH); // set the topic to publish to
       pubsubTopic.publisher().publish(buffer, pubsubCallback) // add custom attributes tracking provenance
     }
   }
+
+  return publish;
 }
 
+/**
+ * Persistors for the following
+ * - file access
+ * - message bus publishing.
+ */
 const persistors = {
   'file': {
     'filesystem': getFileFromFilesystem,
@@ -49,6 +77,12 @@ const persistors = {
   }
 };
 
+/**
+ * 
+ * @param {string} bucket The bucket or path to the file 
+ * @param {string} name The name of the file
+ * @param {function} persistor The persistor to retrieve  
+ */
 function getFileStream (bucket, name, persistor) {
   if (!bucket) {
     throw new Error('Bucket not provided. Make sure you have a "bucket" property in your request');
@@ -69,7 +103,7 @@ function getFileStream (bucket, name, persistor) {
  * @param {object} event.data A Google Cloud Pubsub Message.
  * @param {object} event.data.attributes Attributes of the Pubsub message.
  * @param {string} event.data.attributes.objectId Name of a file in the Cloud Storage bucket.
- * @param {string} event.data.attributes.objectId Name of a Cloud Storage bucket.
+ * @param {string} event.data.attributes.bucketId Name of a Cloud Storage bucket.
  * @param {function} callback The callback function.
  */
 exports.processZip = (event, callback) => {
@@ -97,7 +131,7 @@ exports.processZip = (event, callback) => {
     
     file.pipe(unzipper.ParseOne()) // unzip the file, since there's only one file expected grab the first one
     .pipe(JSONStream.parse('results.*')) // separate records from the 'results' array
-    .pipe(JSONStream.stringify(false)) // create a string out of the records, 
+    //.pipe(JSONStream.stringify(false)) // create a string out of the records, 
     // the false arg separates records only by carraige returns
     .on('data', publishCallback)
     .on('end', function handleEnd(data) {

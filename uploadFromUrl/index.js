@@ -7,7 +7,8 @@ const urlEncode = require('urlencode');
 const Storage = require('@google-cloud/storage');
 const PubSub = require('@google-cloud/pubsub');
 
-const BUCKET = 'drug_portal' 
+const BUCKET = 'drug_portal';
+const DATA_DIR = 'data/fda/';
 
 // Instantiates a client
 const storage = Storage();
@@ -171,29 +172,11 @@ exports.uploadFromUrl = (req, res) => {
 	// create filename
 	const filename = parser.encode(url);
 
-  //const file = initializeFile(BUCKET, filename, persistors.file.cloudStorage)
-
+  // initialize bucket
   const destinationBucket = storage.bucket(BUCKET);
-
-  //const myBucket = storage.bucket(`drug_portal`)
   
-  //var file = destinationBucket.file(`test/test${Date.now()}.json.zip`);
-
-
-  /*
-  fs.createReadStream(url)
-  .pipe(file.createWriteStream())
-  .on('error', function(err) {
-    console.log(err)
-    res.send(err);
-  })
-  .on('finish', function() {
-    // The file upload is complete.
-    res.send('complete')
-  });
-  */
-  
-  var file = destinationBucket.file(`test/test-${filename}`).createWriteStream();
+  // create write stream
+  var file = destinationBucket.file(`${DATA_DIR}${filename}`).createWriteStream();
 
   console.log('uploading to:' + file)
 
@@ -210,20 +193,16 @@ exports.uploadFromUrl = (req, res) => {
   https.get(url, function(downloadRes) {
     downloadRes.on('data', function(data) {
       file.write(data);
-    }).on('end', function() {
+      }).on('end', function() {
         file.end();
         console.log('written')
         res.send(`completed`)
-      })
-    }).on('error', function(err) {
+      }).on('error', function(err) {
           console.log(err)
           res.send(`error occurred`)
         });
-
-  /*
-  https.createReadStream(url)
-       .pipe(file.createWriteStream())
-       .on('error', function(err) {console.log('error')})
-       .on('finish', function() { res.send('success')})
-       */
+    }).on('error', function(err) {
+      console.log(err)
+      res.send(`error occurred`)
+    });
 };

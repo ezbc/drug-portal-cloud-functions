@@ -1,12 +1,13 @@
 //const urlEncode = require('urlencode');
 //const common = require('../common');
 const https = require('https');
+const http = require('http');
 const fs = require('fs');
 const urlEncode = require('urlencode');
 const Storage = require('@google-cloud/storage');
 const PubSub = require('@google-cloud/pubsub');
 
-const BUCKET = 'gs://drug_portal/data/fda/' 
+const BUCKET = 'drug_portal' 
 
 // Instantiates a client
 const storage = Storage();
@@ -84,9 +85,22 @@ function urlParserDecode (url) {
   return urlDecode(url);
 };
 
+function base64ParserEncode (url) {
+  return new Buffer(url).toString('base64');
+};
+
+function base64ParserDecode (url) {
+  return new Buffer(url, 'base64').toString('ascii');
+};
+
 const urlParser = {
   'encode': urlParserEncode,
   'decode': urlParserDecode
+}
+
+const base64Parser = {
+  'encode': base64ParserEncode,
+  'decode': base64ParserDecode
 }
 
 /**
@@ -136,7 +150,8 @@ const persistors = {
 };
 
 const parsers = {
-  'url': urlParser
+  'url': urlParser,
+  'base64': base64Parser
 };
 
 /**
@@ -151,25 +166,64 @@ exports.uploadFromUrl = (req, res) => {
 	console.log(url)
 
 	// get the parser
-	const parser = parsers.url;
+	const parser = parsers.base64;
 
 	// create filename
 	const filename = parser.encode(url);
 
-	// TODO: replace with a persistor
-	const download = https.get(url)
-  
   //const file = initializeFile(BUCKET, filename, persistors.file.cloudStorage)
 
-  const myBucket = storage.bucket(BUCKET);
+  const destinationBucket = storage.bucket(BUCKET);
 
-	var file = myBucket.file(filename);
+  //const myBucket = storage.bucket(`drug_portal`)
+  
+  //var file = destinationBucket.file(`test/test${Date.now()}.json.zip`);
 
-	const request = download
-	  .pipe(file.createWriteStream())
-	  .on('error', function(err) {
-	  	console.log(err)})
-	  .on('finish', function() {
-	  	console.log('finished')});
-	 res.send('job initiated');
+
+  /*
+  fs.createReadStream(url)
+  .pipe(file.createWriteStream())
+  .on('error', function(err) {
+    console.log(err)
+    res.send(err);
+  })
+  .on('finish', function() {
+    // The file upload is complete.
+    res.send('complete')
+  });
+  */
+  
+  var file = destinationBucket.file(`test/test-${filename}`).createWriteStream();
+
+  console.log('uploading to:' + file)
+
+  //file = fs.createWriteStream('./test.json.zip');
+  console.log('creating write stream')
+
+  let protocol = null;
+  if(url.startsWith(`http`)) {
+    protocol = http;
+  } else if(url.startsWith(`https`)) {
+    protocol = https;
+  } 
+
+  https.get(url, function(downloadRes) {
+    downloadRes.on('data', function(data) {
+      file.write(data);
+    }).on('end', function() {
+        file.end();
+        console.log('written')
+        res.send(`completed`)
+      })
+    }).on('error', function(err) {
+          console.log(err)
+          res.send(`error occurred`)
+        });
+
+  /*
+  https.createReadStream(url)
+       .pipe(file.createWriteStream())
+       .on('error', function(err) {console.log('error')})
+       .on('finish', function() { res.send('success')})
+       */
 };

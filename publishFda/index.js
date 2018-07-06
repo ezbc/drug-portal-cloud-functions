@@ -52,7 +52,11 @@ function publishToPubsub(attributes) {
     if (data) {
       const message = {
         content: data,
-        header: attributes};
+        header: {
+          provenance:
+            [attributes]
+          }
+        };
       const buffer = Buffer.from(JSON.stringify(message)); // publish api requires data to be buffered
       const pubsubTopic = pubsub.topic(TOPIC_TO_PUBLISH); // set the topic to publish to
       pubsubTopic.publisher().publish(buffer, pubsubCallback) // add custom attributes tracking provenance

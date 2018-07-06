@@ -1,0 +1,12 @@
+{
+  "name": "common",
+  "version": "0.0.1",
+  "description": "Cloud functions library",
+  "author": "Your Name <elijah@ezbc.me>",
+  "dependencies": {
+    "@google-cloud/storage": "1.6.0",
+    "@google-cloud/pubsub": ">=0.18.0",
+    "urlencode": "^1.1.0"
+  },
+  "devDependencies": {}
+}

@@ -1,0 +1,10 @@
+https://download.open.fda.gov/device/enforcement/device-enforcement-0001-of-0001.json.zip
+https://download.open.fda.gov/device/classification/device-classification-0001-of-0001.json.zip
+https://download.open.fda.gov/device/510k/device-510k-0001-of-0001.json.zip
+https://download.open.fda.gov/device/recall/device-recall-0001-of-0001.json.zip
+https://download.open.fda.gov/device/registrationlisting/device-registrationlisting-0001-of-0001.json.zip
+https://download.open.fda.gov/device/pma/device-pma-0001-of-0001.json.zip
+https://download.open.fda.gov/device/udi/device-udi-0001-of-0017.json.zip
+https://download.open.fda.gov/device/udi/device-udi-0002-of-0017.json.zip
+https://download.open.fda.gov/device/udi/device-udi-0003-of-0017.json.zip
+https://download.open.fda.gov/device/udi/device-udi-0004-of-0017.json.zip

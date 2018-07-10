@@ -2,10 +2,13 @@
     "version": "0.2.0",
     "configurations": [
       {
-        "name": "Debug Function",
+        "name": "Attach to functions emulator",
         "type": "node",
         "request": "attach",
-        "port": 5858
+        "restart": true,
+        "port": 5858,
+        "localRoot": "${workspaceFolder}",
+        "remoteRoot": "/usr/src/app/uploadFromUrl"
       }
     ]
   }

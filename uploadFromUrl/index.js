@@ -108,7 +108,6 @@ function cloudStorageWritePersistor(filename) {
 function uploadFromUrlWithPersistors(req, res, persistors) {
 
 	const targetUrl = req.body.url;
-	console.log(targetUrl)
 
 	// get the parser
 	const parser = parsers.base64;
@@ -116,14 +115,22 @@ function uploadFromUrlWithPersistors(req, res, persistors) {
 	// create filename
 	const destinationFilename = parser.encode(targetUrl);
   
+  const customMetadata = {
+        originalUrl: targetUrl,
+        requestTime: `${Date.now()}`
+      }
+
   // create write stream
   const writePersistor = persistors.writePersistor;
   let destinationFile = writePersistor(destinationFilename);
-  let destinationStream = destinationFile.createWriteStream();
+  let destinationStream = destinationFile.createWriteStream(
+    {metadata: {
+      metadata: customMetadata 
+    }
+  });
 
-  console.info('Uploading ' + targetUrl)
+  // begin the response
   let response = {'destinationUrl': destinationFile.filepath, 'requestUrl': targetUrl}
-  console.log(response)
 
   // TODO: write a behavior pattern to identify which pattern to use, replace if statements
   let urlObj = url.parse(targetUrl);
@@ -135,20 +142,19 @@ function uploadFromUrlWithPersistors(req, res, persistors) {
 
   const protocol = protocols[urlObj.protocol];
 
-  // PERSISTOR
+  // start a read stream from http or https
   protocol.get(targetUrl, function(downloadRes) {
     downloadRes.on('data', function(data) {
 
-      console.log('writing')
-      // PERSISTOR
+      // write chunk to GCS
       destinationStream.write(data);
-      console.log('data written')
+
       }).on('end', function() {
+
         destinationStream.end();
         response.status = `uploaded`;
-        console.log(response)
+
         res.send(response)
-        console.log(res)
       }).on('error', function(err) {
           console.error(err)
           res.send(`error occurred`)

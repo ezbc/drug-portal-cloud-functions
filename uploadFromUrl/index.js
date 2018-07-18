@@ -108,6 +108,7 @@ function cloudStorageWritePersistor(filename) {
 function uploadFromUrlWithPersistors(req, res, persistors) {
 
 	const targetUrl = req.body.url;
+  const targetVersion = req.body.version;
 
 	// get the parser
 	const parser = parsers.base64;
@@ -117,7 +118,8 @@ function uploadFromUrlWithPersistors(req, res, persistors) {
   
   const customMetadata = {
         originalUrl: targetUrl,
-        requestTime: `${Date.now()}`
+        requestTime: `${Date.now()}`,
+        targetVersion
       }
 
   // create write stream

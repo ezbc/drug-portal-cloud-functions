@@ -11,7 +11,8 @@ const fs = require('fs');
 const storage = Storage();
 const pubsub = PubSub();
 
-const TOPIC_TO_PUBLISH = 'load-to-marklogic';
+//const TOPIC_TO_PUBLISH = 'load-to-marklogic';
+const TOPIC_TO_PUBLISH = 'local-load-to-marklogic';
 
 /** Persistor for retrieving a file from Cloud Storage
  * 
@@ -22,11 +23,11 @@ function getFileFromCloudStorage(bucket, name) {
   return storage.bucket(bucket).file(name).createReadStream();
 }
 
-function getFileMetadataFromCloudStorage(bucket, name) {
+function getFileMetadataFromCloudStorage(bucket, name, callback) {
   storage.bucket(bucket).file(name).getMetadata()
                 .then( results => {
                   const metadata = results[0].metadata;
-                  return metadata
+                  callback(metadata);
                 });
 }
 
@@ -61,13 +62,25 @@ function publishToPubsub(attributes) {
       const message = {
         content: data,
         header: {
-          provenance:
-            [attributes]
-          }
-        };
+          provenance: [
+            attributes
+          ]
+        }
+      };
+
+      const maxMessages = 10;
+      const maxWaitTime = 10000;
+
+      // Publishes the message as a string, e.g. "Hello, world!" or JSON.stringify(someObject)
+
       const buffer = Buffer.from(JSON.stringify(message)); // publish api requires data to be buffered
-      const pubsubTopic = pubsub.topic(TOPIC_TO_PUBLISH); // set the topic to publish to
-      pubsubTopic.publisher().publish(buffer, pubsubCallback) // add custom attributes tracking provenance
+      const pubsubTopic = pubsub.topic(TOPIC_TO_PUBLISH, {'autocreate': true}); // set the topic to publish to
+      pubsubTopic.publisher({
+          batching: {
+            maxMessages: maxMessages,
+            maxMilliseconds: maxWaitTime,
+          },
+        }).publish(buffer, pubsubCallback); // add custom attributes tracking provenance
     }
   }
 
@@ -131,28 +144,24 @@ exports.processZip = (event, callback) => {
     const name = attributes.objectId,
       bucket = attributes.bucketId;
 
-    const metadata = getFileMetadataFromCloudStorage(bucket, name);
-    attributes.customMetadata = metadata
+    function getFileMetadataFromCloudStorageCallback(metadata) {
+      attributes.customMetadata = metadata
 
-    // load the file from Cloud Storage
-    let file = getFileStream(bucket, name, persistors['file']['cloudStorage']);
+      // load the file from Cloud Storage
+      let file = getFileStream(bucket, name, persistors['file']['cloudStorage']);
 
-    // build custom attributes to record the bucket notification in the message
-    const attributesToPublish = {
-      provenance: [
-        attributes
-      ]
-    }
+      // get the publish callback
+      const publishCallback = persistors['publish']['pubsub'](attributes);
+      
+      file.pipe(unzipper.ParseOne()) // unzip the file, since there's only one file expected grab the first one
+      .pipe(JSONStream.parse('results.*')) // separate records from the 'results' array
+      //.pipe(JSONStream.stringify(false)) // create a string out of the records, 
+      // the false arg separates records only by carraige returns
+      .on('data', publishCallback)
+      .on('end', function handleEnd(data) {
+        callback(null, `published`)
+      })
+    };
 
-    // get the publish callback
-    const publishCallback = persistors['publish']['pubsub'](attributesToPublish);
-    
-    file.pipe(unzipper.ParseOne()) // unzip the file, since there's only one file expected grab the first one
-    .pipe(JSONStream.parse('results.*')) // separate records from the 'results' array
-    //.pipe(JSONStream.stringify(false)) // create a string out of the records, 
-    // the false arg separates records only by carraige returns
-    .on('data', publishCallback)
-    .on('end', function handleEnd(data) {
-      callback(null, `published`)
-    })
+    getFileMetadataFromCloudStorage(bucket, name, getFileMetadataFromCloudStorageCallback);
 };

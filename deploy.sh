@@ -26,12 +26,18 @@ set -- "${POSITIONAL[@]}" # restore positional parameters
 
 if [ $CLOUD_FUNCTION == "publishFda" ]; then
   if [ $ENVIRONMENT == "local" ]; then
-    functions deploy processZip --trigger-event topic.publish --trigger-resource dataset-fda-status-local --source publishFda --trigger-provider cloud.pubsub
+    functions deploy processZip \
+    --trigger-event topic.publish \
+    --trigger-resource dataset-fda-status-local \
+    --source publishFda \
+    --trigger-provider cloud.pubsub \
+    --timeout=500s
   elif [ $ENVIRONMENT == "dev" ]; then
     gcloud beta functions deploy processZip \
       --trigger-event google.pubsub.topic.publish \
       --trigger-resource dataset-fda-status \
-      --memory=1024MB \
-      --timeout=300s
+      --source publishFda \
+      --memory=2048MB \
+      --timeout=500s
   fi
 fi

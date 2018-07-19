@@ -1,1 +1,13 @@
-functions call processZip --data '{"attributes": {"objectGeneration": "1530914572285327", "overwroteGeneration": "1530914090558483", "eventTime": "2018-07-06T22:02:52.284974Z", "bucketId": "drug_portal", "eventType": "OBJECT_FINALIZE", "notificationConfig": "projects/_/buckets/drug_portal/notificationConfigs/4", "payloadFormat": "JSON_API_V1", "objectId": "data/fda/aHR0cHM6Ly9kb3dubG9hZC5vcGVuLmZkYS5nb3YvZHJ1Zy9ldmVudC8yMDEzcTEvZHJ1Zy1ldmVudC0wMDAyLW9mLTAwMTguanNvbi56aXA="}}'
+
+while read filename; do
+	date=`date '+%Y-%m-%dT%H:%M:%S.%3NZ'`
+	functions call processZip --data '{"attributes": {  
+	    "objectGeneration": "1531955353874591", 
+	    "eventTime": "'$date'", 
+	    "bucketId": "drug_portal", 
+	    "eventType": "OBJECT_FINALIZE", 
+	    "notificationConfig": "projects/_/buckets/drug_portal/notificationConfigs/4", 
+	    "payloadFormat": "JSON_API_V1", 
+	    "objectId": "data/fda/'$filename'"
+	    }}'
+done < $1

@@ -28,7 +28,7 @@ if [ $CLOUD_FUNCTION == "publishFda" ]; then
   if [ $ENVIRONMENT == "local" ]; then
     functions deploy processZip \
     --trigger-event topic.publish \
-    --trigger-resource dataset-fda-status-local \
+    --trigger-resource dataset-fda-status \
     --source publishFda \
     --trigger-provider cloud.pubsub \
     --timeout=500s

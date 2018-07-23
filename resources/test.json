@@ -13,15 +13,15 @@
   "results": [
     {
       "boxed_warning": ["test1"
-      ],
+      ]
     },
     {
       "boxed_warning": ["test2"
-      ],
+      ]
     },
     {
       "boxed_warning": ["test3"
-      ],
-    },
+      ]
+    }
   ]
 }

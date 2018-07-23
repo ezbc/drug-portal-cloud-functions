@@ -2,17 +2,9 @@
 //const common = require('../common');
 const https = require('https');
 const http = require('http');
-const fs = require('fs');
 const urlEncode = require('urlencode');
 const Storage = require('@google-cloud/storage');
-const PubSub = require('@google-cloud/pubsub');
-
-const BUCKET = 'drug_portal';
-const DATA_DIR = 'data/fda/';
-
-// Instantiates a client
-const storage = Storage();
-const pubsub = PubSub();
+const url = require('url');
 
 /** Persistor for retrieving a file from Cloud Storage
  * 
@@ -21,50 +13,6 @@ const pubsub = PubSub();
  */
 function getFileFromCloudStorage(bucket, name) {
   return storage.bucket(bucket).file(name).createReadStream();
-}
-
-/** Persistor for retrieving a file from filesystem
- * 
- * @param {string} prefixPath path to prefix filename
- * @param {string} path path to filename
- */
-function getFileFromFilesystem(prefixPath, path) {
-  return fs.createReadStream(prefixPath + path);
-}
-
-function pubsubCallback(err, messageId){
-  if (err) {
-    throw Error
-  }
-}
-
-/** Generate a function to publish data to pubsub.
- * 
- * @param {object} attributes attributes of a message to publish
- * @return {function} function which accepts data to publish
- */
-function publishToPubsub(attributes) {
-
-  /** Publish message to pubsub
-   * 
-   * @param {object} data data to publish as message
-   */
-  function publish(data) {
-    if (data) {
-      const message = {
-        content: data,
-        header: {
-          provenance:
-            [attributes]
-          }
-        };
-      const buffer = Buffer.from(JSON.stringify(message)); // publish api requires data to be buffered
-      const pubsubTopic = pubsub.topic(TOPIC_TO_PUBLISH); // set the topic to publish to
-      pubsubTopic.publisher().publish(buffer, pubsubCallback) // add custom attributes tracking provenance
-    }
-  }
-
-  return publish;
 }
 
 function initCloudStorageFile(bucketName, filename) {
@@ -76,7 +24,6 @@ function initCloudStorageFile(bucketName, filename) {
 function initializeFile(bucket, filename, persistor) {
   return persistor(bucket, filename)
 };
-
 
 function urlParserEncode (url) {
   return urlEncode(url);
@@ -105,28 +52,6 @@ const base64Parser = {
 }
 
 /**
- * ******************
- * EXPORTED FUNCTIONS
- * ******************
- */
-
-/**
- * 
- * @param {string} bucket The bucket or path to the file 
- * @param {string} name The name of the file
- * @param {function} persistor The persistor to retrieve  
- */
-function getFileStream (bucket, name, persistor) {
-  if (!bucket) {
-    throw new Error('Bucket not provided. Make sure you have a "bucket" property in your request');
-  }
-  if (!name) {
-    throw new Error('Filename not provided. Make sure you have a "name" property in your request');
-  }  
-  return persistor(bucket, name);
-}
-
-/**
  * *****************
  * EXPORTED LITERALS
  * *****************
@@ -138,21 +63,109 @@ function getFileStream (bucket, name, persistor) {
  * - message bus publishing.
  */
 const persistors = {
-  'readStream': {
-    'filesystem': getFileFromFilesystem,
-    'cloudStorage': getFileFromCloudStorage
+  'write': {
+    'cloudStorage': cloudStorageWritePersistor
   },
-  'file': {
-    'cloudStorage': initCloudStorageFile
-  },
-  'publish': {
-    'pubsub': publishToPubsub
+  'read': {
+   'http': httpReadPersistor 
   }
 };
 
 const parsers = {
   'url': urlParser,
   'base64': base64Parser
+};
+
+function httpReadPersistor(url) {
+  return {}
+};
+
+/**
+ * Writes a file to drug portal bucket
+ * 
+ * @param {string} filename target filename for cloud storage object
+ */
+function cloudStorageWritePersistor(filename) {
+  // TODO: add environment variables in cloud config
+  const BUCKET = 'drug_portal';
+  const DATA_DIR = 'data/fda/';
+
+  // Instantiates a client
+  const storage = Storage();
+
+  // initialize bucket
+  const destinationBucket = storage.bucket(BUCKET);
+
+  const file = destinationBucket.file(DATA_DIR + filename)
+  
+  // gcs filepath
+  const filepath = `gs://${BUCKET}/${DATA_DIR}${filename}`;
+
+  file.filepath = filepath;
+  return file;
+};
+
+function uploadFromUrlWithPersistors(req, res, persistors) {
+
+	const targetUrl = req.body.url;
+  const targetVersion = req.body.version;
+
+	// get the parser
+	const parser = parsers.base64;
+
+	// create filename
+	const destinationFilename = parser.encode(targetUrl);
+  
+  const customMetadata = {
+        originalUrl: targetUrl,
+        requestTime: `${Date.now()}`,
+        targetVersion
+      }
+
+  // create write stream
+  const writePersistor = persistors.writePersistor;
+  let destinationFile = writePersistor(destinationFilename);
+  let destinationStream = destinationFile.createWriteStream(
+    {metadata: {
+      metadata: customMetadata 
+    }
+  });
+
+  // begin the response
+  let response = {'destinationUrl': destinationFile.filepath, 'requestUrl': targetUrl}
+
+  // TODO: write a behavior pattern to identify which pattern to use, replace if statements
+  let urlObj = url.parse(targetUrl);
+
+  protocols = {
+    'http:': http,
+    'https:': https,
+  }
+
+  const protocol = protocols[urlObj.protocol];
+
+  // start a read stream from http or https
+  protocol.get(targetUrl, function(downloadRes) {
+    downloadRes.on('data', function(data) {
+
+      // write chunk to GCS
+      destinationStream.write(data);
+
+      }).on('end', function() {
+
+        destinationStream.end();
+        response.status = `uploaded`;
+
+        res.send(response)
+      }).on('error', function(err) {
+          console.error(err)
+          res.send(`error occurred`)
+        });
+    }).on('error', function(err) {
+      console.error(err)
+      res.send(`error occurred`)
+    });
+
 };
 
 /**
@@ -163,46 +176,11 @@ const parsers = {
  */
 exports.uploadFromUrl = (req, res) => {
 
-	const url = req.body.url;
-	console.log(url)
+  const callbackPersistors = {
+    'writePersistor': persistors.write.cloudStorage,
+    'readPersistor': persistors.read.http
+    };
 
-	// get the parser
-	const parser = parsers.base64;
+  uploadFromUrlWithPersistors(req, res, callbackPersistors);
 
-	// create filename
-	const filename = parser.encode(url);
-
-  // initialize bucket
-  const destinationBucket = storage.bucket(BUCKET);
-  
-  // create write stream
-  var file = destinationBucket.file(`${DATA_DIR}${filename}`).createWriteStream();
-
-  console.log('uploading to:' + file)
-
-  //file = fs.createWriteStream('./test.json.zip');
-  console.log('creating write stream')
-
-  let protocol = null;
-  if(url.startsWith(`http`)) {
-    protocol = http;
-  } else if(url.startsWith(`https`)) {
-    protocol = https;
-  } 
-
-  https.get(url, function(downloadRes) {
-    downloadRes.on('data', function(data) {
-      file.write(data);
-      }).on('end', function() {
-        file.end();
-        console.log('written')
-        res.send(`completed`)
-      }).on('error', function(err) {
-          console.log(err)
-          res.send(`error occurred`)
-        });
-    }).on('error', function(err) {
-      console.log(err)
-      res.send(`error occurred`)
-    });
 };

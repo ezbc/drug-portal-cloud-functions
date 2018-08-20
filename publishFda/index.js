@@ -7,13 +7,13 @@ const Storage = require('@google-cloud/storage');
 const PubSub = require('@google-cloud/pubsub');
 const fs = require('fs');
 
-// Instantiates a client
+// Pubsub target topic
+const TOPIC_TO_PUBLISH = 'load-to-marklogic';
+
+// Initialize clients globally to minimize the expensive operations
+// across multiple cloud function invocations
 const storage = Storage();
 const pubsub = PubSub();
-
-const TOPIC_TO_PUBLISH = 'load-to-marklogic';
-//const TOPIC_TO_PUBLISH = 'load-to-marklogic';
-
 const pubsubTopic = pubsub.topic(TOPIC_TO_PUBLISH, {'autocreate': true}); // set the topic to publish to
 const publisher = pubsubTopic.publisher({
     batching: {
@@ -54,7 +54,19 @@ function getFileFromFilesystem(prefixPath, path) {
  * @param {object} attributes attributes of a message to publish
  * @return {function} function which accepts data to publish
  */
-function publishToPubsub(attributes, callback) {
+function publishToPubsub(attributes) {
+
+  // count for messages published
+  var messageCount = 0;
+  function messageCallback(error, messageId) {
+    if (error) {
+      console.info(`Error occurred for message ${messageId}`)
+      console.error(error)
+    } else {
+      messageCount++;
+      console.log(messageCount)
+    }
+  };
 
   /** Publish message to pubsub
    * 
@@ -72,12 +84,7 @@ function publishToPubsub(attributes, callback) {
 
       // Publishes the message as a string, e.g. "Hello, world!" or JSON.stringify(someObject)
       const buffer = Buffer.from(JSON.stringify(message)); // publish api requires data to be buffered
-      publisher.publish(buffer, function publishCallback(error, messageId) {
-        if (error) {
-          console.info(`Error occurred for message ${messageId}`)
-          console.error(error)
-        }
-      }); // add custom attributes tracking provenance
+      publisher.publish(buffer, messageCallback); // add custom attributes tracking provenance
     } else {
       console.info('empty record found, skipping...')
     }
@@ -151,18 +158,58 @@ exports.processZip = (event, callback) => {
       // load the file from Cloud Storage
       let file = getFileStream(bucket, name, persistors['file']['cloudStorage']);
 
+        // count for messages published
+        function messageCallback(error, messageId) {
+          if (error) {
+            console.info(`Error occurred for message ${messageId}`)
+            console.error(error)
+          } 
+        };
+
+        // initialize message count
+        var messageCount = 0;
+
+        
+        /** Publish message to pubsub.
+        * 
+        * @param {object} data data to publish as message
+        */
+        // TODO call the module function at the top of this script.
+        // this function is written so that the messageCount can be managed
+        // by each cloud function instance
+        function publishCallback(data) {
+          if (data) {
+            const message = {
+              content: data,
+              header: {
+                provenance: [
+                  attributes
+                ]}
+              }; 
+
+            // Publishes the message as a string, e.g. "Hello, world!" or JSON.stringify(someObject)
+            const buffer = Buffer.from(JSON.stringify(message)); // publish api requires data to be buffered
+            publisher.publish(buffer, messageCallback); // add custom attributes tracking provenance
+            messageCount++;
+          } else {
+            console.info('empty record found, skipping...')
+          }
+        }
+
       // get the publish callback
-      const publishCallback = persistors['publish']['pubsub'](attributes, callback);
-      
+      //const publishCallback = persistors['publish']['pubsub'](attributes);
+
       file.pipe(unzipper.ParseOne()) // unzip the file, since there's only one file expected grab the first one
       .pipe(JSONStream.parse('results.*')) // separate records from the 'results' array
       .on('data', publishCallback)
       .on('end', function handleEnd(data) {
-        callback(null, `published`);
+        console.info(`Total messages published: ${messageCount}`);
+        res = {'messagesPublished': messageCount}
+        return callback(null, res);
       })
       .on('error', function handleError(error) {
         console.error(error);
-        callback(error);
+        return callback(error);
       })
     };
 

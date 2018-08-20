@@ -105,6 +105,13 @@ function cloudStorageWritePersistor(filename) {
   return file;
 };
 
+/**
+ * Downloads a public file via http(s) to a GCS bucket.
+ * @param {object} req the request
+ * @param {object} res the request
+ * @param {object} persistors set of persistors for interacting 
+ * other services
+ */
 function uploadFromUrlWithPersistors(req, res, persistors) {
 
 	const targetUrl = req.body.url;
